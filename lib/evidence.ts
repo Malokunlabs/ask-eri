@@ -9,7 +9,29 @@ export const signals:Signal[]=[
 {id:'remote',question:'Do businesses accept remote orders?',title:'Remote ordering exists but is not universal',answer:'Of 89 merchants, 9 reported accepting remote orders regularly, 29 sometimes, and 51 not at all.',metrics:[{value:'38 / 89',label:'Regular or occasional remote orders'},{value:'51 / 89',label:'No remote orders'}],context:'Remote orders can include phone, messaging and other channels.',limitations:'This is not a measure of online revenue or e-commerce transaction value.',keywords:['remote','online','whatsapp','delivery','orders','digital']},
 {id:'coverage',question:'Where does ERI have evidence today?',title:'Current public evidence covers one Lagos market cluster',answer:'This initial cohort contains 89 production observations from the Yaba–Sabo–Tejuosho area, collected 7–11 October 2026. The original pilot added 10 separate initial observations on 6 October, pending canonical master reconciliation.',metrics:[{value:'89',label:'Production baseline observations'},{value:'10',label:'Original pilot observations'}],context:'The working total is 99 initial records, not 99 verified repeat relationships.',limitations:'No second-visit longitudinal findings are published yet. No evidence for other Nigerian cities is implied.',keywords:['where','coverage','location','yaba','lagos','kano','abuja','merchant','sample','study']}
 ];
-export function answer(q:string){const words=q.toLowerCase().match(/[a-z]+/g)||[];const scored=signals.map(s=>({s,score:s.keywords.reduce((n,k)=>n+(words.some(w=>w.includes(k)||k.includes(w)&&w.length>3)?2:0),0)})).sort((a,b)=>b.score-a.score);return scored[0]?.score?scored[0].s:null}
+// Conservative routing: only answer questions clearly covered by an approved signal.
+// Never use substring matches (e.g. "pos" in "possible").
+const normalize = (q: string) => q.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const has = (q: string, terms: string[]) => terms.some(t => new RegExp('(?:^|\\s)' + t.replace(/ /g, '\\s+') + '(?:$|\\s)').test(q));
+const routes: { id: string; terms: string[] }[] = [
+  { id: 'payments', terms: ['payment', 'payments', 'transfer', 'transfers', 'cash', 'pos', 'card'] },
+  { id: 'records', terms: ['record', 'records', 'recordkeeping', 'bookkeeping', 'accounting', 'sales records'] },
+  { id: 'business', terms: ['trading conditions', 'business conditions', 'business improving', 'business better', 'business worse'] },
+  { id: 'restock', terms: ['restock', 'restocking', 'restocking costs', 'restocking expenditure', 'inventory costs'] },
+  { id: 'credit', terms: ['credit', 'borrowing', 'borrow', 'borrowed', 'loan', 'loans'] },
+  { id: 'remote', terms: ['remote orders', 'online orders', 'phone orders', 'whatsapp orders', 'delivery orders'] },
+  { id: 'coverage', terms: ['coverage', 'where does eri', 'where is eri', 'where have you', 'which markets', 'which locations', 'sample size', 'how many merchants'] }
+];
+const unsupportedPlaces = ['kano', 'abuja', 'ibadan', 'port harcourt', 'enugu', 'kaduna', 'benin', 'owerri', 'accra', 'ghana', 'kenya', 'nairobi', 'africa'];
+const unsupportedClaims = ['forecast', 'predict', 'prediction', 'profit', 'profits', 'revenue', 'turnover', 'margin', 'margins', 'market share', 'national', 'nationwide', 'representative', 'caused', 'causes', 'correlation', 'cross tab', 'crosstab', 'by gender', 'by age', 'year on year', 'longitudinal'];
+export function answer(q: string) {
+  const text = normalize(q);
+  if (!text || has(text, unsupportedPlaces) || has(text, unsupportedClaims)) return null;
+  const matches = routes.filter(r => has(text, r.terms));
+  // Ambiguous multi-topic questions need a properly reviewed cross-tabulation.
+  if (matches.length !== 1) return null;
+  return signals.find(s => s.id === matches[0].id) || null;
+}
 
 export const coverage=[{id:'yaba-lagos',country:'Nigeria',region:'Lagos',city:'Lagos',cluster:'Yaba · Sabo · Tejuosho',status:'baseline',publishedRecords:89,period:'7–11 October 2026'}] as const;
 export function answerFor(q:string,location:string){return (location==='all'||coverage.some(c=>c.id===location))?answer(q):null}
