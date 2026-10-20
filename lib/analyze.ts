@@ -1,5 +1,7 @@
 import { SOURCE_COLUMNS, MIN_RESPONSES, type SourceTable } from './source-schema.ts';
 import type { Analysis, Distribution } from './evidence-types.ts';
+import { analyzeLongitudinal } from './longitudinal.ts';
+import { RECOVERED_IDENTITY } from './source-recovery.ts';
 
 const clean = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
 const empty = (): Distribution => ({ counts: {}, valid: 0, missing: 0, unknown: 0, ambiguous: 0, notApplicable: 0 });
@@ -16,7 +18,7 @@ const recordOptions = new Set(['memory notebook/paper', 'calculator/manual total
 function count(distribution: Distribution, value: string, options: Record<string, string>) {
   const normalized = clean(value);
   if (!normalized) { distribution.missing++; return; }
-  const key = options[normalized];
+  const key = Object.hasOwn(options, normalized) ? options[normalized] : undefined;
   if (!key) { distribution.unknown++; return; }
   distribution.valid++;
   distribution.counts[key] = (distribution.counts[key] ?? 0) + 1;
@@ -29,13 +31,13 @@ function validDate(value: string, today: string) {
 }
 
 // Pure staged analysis. The returned object contains no submission/merchant identifiers.
-export function analyze(table: SourceTable, now = new Date()): Analysis {
+export function analyze(table: SourceTable, now = new Date(), panelApprovalReference?: string): Analysis {
   if (table.headers.length !== SOURCE_COLUMNS.length || table.headers.some((h, i) => clean(h) !== clean(SOURCE_COLUMNS[i].header))) {
     throw new Error('Source schema changed; publication held');
   }
   const quality: Analysis['quality'] = {
     sourceRows: 0, includedRows: 0, heldRows: 0, duplicateRows: 0, invalidRows: 0,
-    pilotRows: 0, revisitRows: 0, provisionalIdentityRows: 0,
+    pilotRows: 0, revisitRows: 0, provisionalIdentityRows: 0, identityReviewRows: 0, identityExcludedRows: 0, recoveredRows: 0,
   };
   const distributions: Analysis['distributions'] = {
     payments: empty(), records: empty(), business: empty(), restock: empty(), credit: empty(), remote: empty(),
@@ -60,6 +62,9 @@ export function analyze(table: SourceTable, now = new Date()): Analysis {
     if (signatures.size > 1) { quality.duplicateRows += group.length; continue; }
     quality.duplicateRows += group.length - 1;
     const row = group[0];
+    if (group.some(copy => /^(reject|exclude|hold)\b/.test(clean(copy.identity)))) {
+      quality.identityExcludedRows++; continue;
+    }
     const type = clean(row.type);
     if (/\bpilot\b/.test(type)) { quality.pilotRows++; continue; }
     if (/\b(revisit|follow.up|return visit)\b/.test(type)) { quality.revisitRows++; continue; }
@@ -67,8 +72,10 @@ export function analyze(table: SourceTable, now = new Date()): Analysis {
       quality.invalidRows++; continue;
     }
     quality.includedRows++;
+    if (group.some(copy => /^review\b/.test(clean(copy.identity)))) quality.identityReviewRows++;
+    if (row.identity === RECOVERED_IDENTITY) quality.recoveredRows++;
     dates.push(row.date);
-    if (clean(row.identity) !== 'verified') quality.provisionalIdentityRows++;
+    if (clean(row.identity) !== 'verified' || group.some(copy => /^review\b/.test(clean(copy.identity)))) quality.provisionalIdentityRows++;
     for (const field of ['payments', 'business', 'credit', 'remote'] as const) count(distributions[field], row[field], enums[field]);
 
     const restock = distributions.restock;
@@ -97,5 +104,7 @@ export function analyze(table: SourceTable, now = new Date()): Analysis {
     }
   }
   dates.sort();
-  return { analyzedAt: now.toISOString(), period: { start: dates[0], end: dates.at(-1)! }, quality, distributions };
+  const byDate = new Map<string, number>();
+  for (const date of dates) byDate.set(date, (byDate.get(date) ?? 0) + 1);
+  return { analyzedAt: now.toISOString(), period: { start: dates[0], end: dates.at(-1)! }, quality, distributions, collection: Array.from(byDate, ([date, observations]) => ({ date, observations })), longitudinal: analyzeLongitudinal(table, today, panelApprovalReference) };
 }

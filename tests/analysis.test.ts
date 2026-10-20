@@ -23,6 +23,28 @@ const update = (table: SourceTable, row: number, key: string, value: string) => 
   table.rows[row][SOURCE_COLUMNS.findIndex(c => c.key === key)] = value;
 };
 
+test('review flags stay included as observations while explicit holds remain excluded', () => {
+  const table = fixture(14);
+  update(table, 0, 'identity', 'REVIEW: possible repeat submission');
+  update(table, 1, 'identity', 'HOLD: unresolved identity');
+  const result = analyze(table, date);
+  assert.equal(result.quality.includedRows, 13);
+  assert.equal(result.quality.identityReviewRows, 1);
+  assert.equal(result.quality.identityExcludedRows, 1);
+  assert.equal(result.quality.revisitRows, 0);
+  assert.equal(result.collection[0].observations, 13);
+});
+
+test('a review flag on any identical retry is retained without counting another observation', () => {
+  const table = fixture();
+  table.rows.push([...table.rows[0]]);
+  update(table, 12, 'identity', 'REVIEW: possible repeat submission');
+  const result = analyze(table, date);
+  assert.equal(result.quality.includedRows, 12);
+  assert.equal(result.quality.identityReviewRows, 1);
+  assert.equal(result.quality.duplicateRows, 1);
+});
+
 test('analysis reconciles every field to eligible observation count', () => {
   const result = analyze(fixture(), date);
   assert.equal(result.quality.includedRows, 12);
@@ -127,22 +149,26 @@ test('public projection never includes identifiers or unrecognised free text', (
   const table = fixture();
   update(table, 0, 'records', 'private contact 08000000000');
   const serialized = JSON.stringify(publishEvidence(analyze(table, date)));
-  for (const value of ['synthetic-', '08000000000', 'private contact', 'submission', 'canonical']) assert.equal(serialized.includes(value), false);
+  for (const value of ['synthetic-', '08000000000', 'private contact', '"submission":', '"canonical":']) assert.equal(serialized.includes(value), false);
 });
 
 test('source snapshot uses reviewed denominators and the actual observation period', () => {
-  assert.equal(snapshot.quality.includedRows, 114);
+  assert.equal(snapshot.quality.includedRows, 115);
   assert.equal(snapshot.quality.sourceRows, 115);
-  assert.equal(snapshot.quality.invalidRows, 1);
-  assert.equal(snapshot.quality.provisionalIdentityRows, 114);
-  assert.equal(snapshot.period.end, '2026-10-15');
+  assert.equal(snapshot.quality.heldRows, 0);
+  assert.equal(snapshot.quality.recoveredRows, 1);
+  assert.equal(snapshot.quality.invalidRows, 0);
+  assert.equal(snapshot.quality.provisionalIdentityRows, 115);
+  assert.equal(snapshot.quality.identityReviewRows, 27);
+  assert.equal(snapshot.period.end, '2026-10-16');
   const metric = (id: string) => snapshot.signals.find(s => s.id === id)!.metrics[0].value;
-  assert.equal(metric('payments'), '69 / 113');
-  assert.equal(metric('records'), '56 / 111');
-  assert.equal(metric('business'), '89 / 113');
-  assert.equal(metric('restock'), '84 / 103');
-  assert.equal(metric('credit'), '30 / 114');
-  assert.equal(metric('remote'), '56 / 114');
+  assert.equal(metric('payments'), '70 / 114');
+  assert.equal(metric('records'), '56 / 112');
+  assert.equal(metric('business'), '89 / 114');
+  assert.equal(metric('restock'), '85 / 104');
+  assert.equal(metric('credit'), '30 / 115');
+  assert.equal(metric('remote'), '56 / 115');
+  assert.equal(snapshot.collection.reduce((sum, day) => sum + day.observations, 0), 115);
 });
 
 test('unconfigured integration is explicitly a snapshot and never reads a source', async () => {

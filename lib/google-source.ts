@@ -1,6 +1,7 @@
 import 'server-only';
 import { GoogleAuth } from 'google-auth-library';
 import { SOURCE_COLUMNS, tableFromColumns } from './source-schema.ts';
+import { SHIFTED_SOURCE_COLUMNS, shiftedCandidates, recoverShiftedRows } from './source-recovery';
 
 const SHEET_ID = '110iYfoI0ejYI7FmLVY_QnMK0PnUQxMp6KEvVM4Zjjtc';
 const SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
@@ -35,5 +36,16 @@ export async function loadGoogleSource() {
   const response = await client.request<{ valueRanges: { values?: unknown[][] }[] }>({
     url: `${ROOT}/values:batchGet?${params}`, timeout: 10_000, retry: false,
   });
-  return tableFromColumns(response.data.valueRanges);
+  const table = tableFromColumns(response.data.valueRanges);
+  const candidates = shiftedCandidates(table);
+  if (!candidates.length) return table;
+  if (sheet.gridProperties.columnCount < 101) throw new Error('Shifted source bounds changed');
+  const recoveryParams = new URLSearchParams({ valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' });
+  for (const index of candidates) for (const column of SHIFTED_SOURCE_COLUMNS) recoveryParams.append('ranges', `${quotedTitle}!${column}${index + 2}`);
+  const recovery = await client.request<{ valueRanges: { values?: unknown[][] }[] }>({
+    url: `${ROOT}/values:batchGet?${recoveryParams}`, timeout: 10_000, retry: false,
+  });
+  if (recovery.data.valueRanges.length !== candidates.length * 10) throw new Error('Incomplete shifted source read');
+  return recoverShiftedRows(table, candidates.map((rowIndex, i) => ({ rowIndex, values: SHIFTED_SOURCE_COLUMNS.map((_, j) => String(recovery.data.valueRanges[i * 10 + j].values?.[0]?.[0] ?? '')) })));
+
 }

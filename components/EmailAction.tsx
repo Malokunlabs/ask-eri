@@ -1,0 +1,9 @@
+'use client';
+import { useState } from 'react';
+import styles from './DecisionHub.module.css';
+export default function EmailAction({ purpose, id, token }: { purpose: string; id: string; token: string }) {
+  const [busy,setBusy] = useState(false); const [done,setDone] = useState(false); const [message,setMessage] = useState('');
+  const valid = ['confirm','unsubscribe'].includes(purpose) && Boolean(id && token);
+  async function act() { setBusy(true); try { const response = await fetch('/api/engagement/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose,id,token }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to process this link.'); setMessage(result.message); setDone(true); history.replaceState(null,'','/email-action'); } catch(error) { setMessage((error as Error).message); } finally { setBusy(false); } }
+  return <main className={styles.hub}><a href="/" className="wordmark">eri.</a><h1>{purpose === 'unsubscribe' ? 'Remove your contact record' : 'Confirm your email choices'}</h1><p>{purpose === 'unsubscribe' ? 'This stops future messages for this enquiry or subscription and removes its contact record. A message already accepted by the email provider cannot be recalled.' : 'Activate the enquiry or notification topics you requested. Opening this page alone does not confirm anything.'}</p>{valid && !done ? <button className={styles.primary} disabled={busy} onClick={act}>{busy ? 'Processing…' : purpose === 'unsubscribe' ? 'Unsubscribe & remove record' : 'Confirm my email'}</button> : !valid && !done ? <p>This link is incomplete. Use the full link from your confirmation email.</p> : null}<p role="status">{message}</p><p><a href="/">Return to Ask ERI</a> · <a href="/privacy">Privacy</a></p></main>;
+}

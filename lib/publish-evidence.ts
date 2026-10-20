@@ -8,7 +8,7 @@ function dateLabel(iso: string) {
 export function publishEvidence(analysis: Analysis): Evidence {
   const { distributions: d, quality: q } = analysis;
   const label = analysis.period.start === analysis.period.end ? dateLabel(analysis.period.start) : `${dateLabel(analysis.period.start)} – ${dateLabel(analysis.period.end)}`;
-  const limitation = 'Non-representative field cohort; self-reported responses. Observations are not verified unique businesses. No national estimates or causal claims.';
+  const limitation = `Non-representative field cohort; self-reported responses. ${q.identityReviewRows} included observations have unresolved identity-review flags and may include repeat submissions. Observations are not verified unique businesses. No national estimates or causal claims.`;
   const context = (id: keyof typeof d) => {
     const f = d[id];
     return `${f.valid} classifiable responses from ${q.includedRows} eligible initial observations. ${f.missing} missing, ${f.unknown} unknown or unrecognised, ${f.ambiguous} contradictory, ${f.notApplicable} not applicable. Only classifiable responses enter this signal’s denominator.`;
@@ -56,15 +56,22 @@ export function publishEvidence(analysis: Analysis): Evidence {
   }, 'Phone and messaging orders are included. This does not measure online sales value.');
   signals.push({
     id: 'coverage', question: 'Where does ERI have evidence today?', title: 'Current published cohort',
-    answer: `${q.includedRows} eligible initial observations dated ${label} are included in this analysis of the configured Yaba–Sabo–Tejuosho cohort in Lagos. ${q.heldRows} source rows are held out of the published cohort.`,
+    answer: `${q.includedRows} eligible initial observations dated ${label} are included in this analysis of the configured Yaba–Sabo–Tejuosho cohort in Lagos. ${q.identityReviewRows} identity-review observations are included with warnings, and ${q.recoveredRows} shifted source rows were recovered. ${q.heldRows} source rows are held out of the published cohort.`,
     metrics: [{ value: String(q.includedRows), label: 'Eligible initial observations' }, { value: String(q.heldRows), label: 'Source rows held out' }],
     denominator: q.includedRows, excludedResponses: q.heldRows,
     context: 'Geography is the configured scope of this source; the form has no row-level market field. The historical 10-record pilot is not added to this source. No verified longitudinal comparison is published.',
     limitations: limitation,
   });
+  const observedCounts: Record<string, number> = {
+    payments: count('payments', 'transfer'), records: count('records', 'none'),
+    business: better, restock: higher, credit: count('credit', 'yes'), remote: orders,
+  };
+  for (const signal of signals) {
+    if (Object.hasOwn(observedCounts, signal.id)) signal.observed = { count: observedCounts[signal.id], denominator: signal.denominator };
+  }
   const fields = Object.fromEntries(Object.entries(d).map(([key, { valid, missing, unknown, ambiguous, notApplicable }]) => [key, { valid, missing, unknown, ambiguous, notApplicable }])) as Record<string, FieldQuality>;
   return {
-    version: 'analysis-v1', analyzedAt: analysis.analyzedAt,
+    version: 'analysis-v3', analyzedAt: analysis.analyzedAt, collection: analysis.collection, longitudinal: analysis.longitudinal,
     period: { ...analysis.period, label }, quality: q, fields, signals,
     coverage: [{ ...SOURCE_COHORT, publishedRecords: q.includedRows, period: label }],
   };

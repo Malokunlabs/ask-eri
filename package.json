@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "analyze": "node --experimental-strip-types scripts/analyze-source.ts"
+    "analyze": "node --experimental-strip-types scripts/analyze-source.ts",
+    "operations": "node --experimental-strip-types scripts/operations.ts"
   },
   "dependencies": {
     "google-auth-library": "^11.3.1",

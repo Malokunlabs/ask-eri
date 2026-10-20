@@ -12,6 +12,7 @@ export function createEvidenceService(options: {
   configured: () => boolean;
   load: () => Promise<SourceTable>;
   now?: () => number;
+  panelApprovalReference?: string;
 }) {
   const now = options.now ?? Date.now;
   let lastAttempt = -Infinity;
@@ -28,7 +29,7 @@ export function createEvidenceService(options: {
     pending = (async () => {
       try {
         const table = await options.load();
-        const evidence = publishEvidence(analyze(table, new Date(now())));
+        const evidence = publishEvidence(analyze(table, new Date(now()), options.panelApprovalReference));
         current = {
           evidence,
           connection: { mode: 'live', checkedAt: new Date(now()).toISOString(), refreshSeconds: REFRESH_SECONDS, message: 'Source connected. New observations pass analysis checks before publication; checked every minute while this page is open.' },
